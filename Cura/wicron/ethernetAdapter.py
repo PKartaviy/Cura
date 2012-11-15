@@ -20,7 +20,6 @@ class EthernetClient(socket.socket):
                 return ''
             self.inMessage += income
             returnPos = self.inMessage.find("\n")
-
         result = self.inMessage[:returnPos+1]
         self.inMessage = self.inMessage[returnPos+1:]
         return result
@@ -31,7 +30,6 @@ class  EthernetServer:
         self.port = port
     
     def start(self):
-        print "Inside process"
         host = ''
         # There is some problem in detection of your ip
         # when DNS server is not properly configured
@@ -40,11 +38,8 @@ class  EthernetServer:
             host = socket.gethostbyname(socket.gethostname())
         except:
             host = ''
-        print host
         
-        print "bind"
         self.serversocket.bind((host, self.port))
-        print "listen"
         self.serversocket.listen(5)
         
         (clientSocket, address) = self.serversocket.accept()
