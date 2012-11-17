@@ -97,12 +97,12 @@ class  EthernetServer:
             except:
                 #timeout
                 continue
-            else:    
+            else:
                 s = EthernetClient(_socket = clientSocket)
 
                 socketThreades.append(Thread(target = self.__processSocket__, args=(s,)))
                 socketThreades[-1].start()
-        
+
         for process in socketThreades:
             process.join()
 
@@ -128,6 +128,7 @@ class  EthernetServer:
         return inp
 
 class PrintServer(EthernetServer):
+    DEFAULT_PORT = 3000
     def __init__(self, port, printer=VirtualPrinter()):
         EthernetServer.__init__(self, port)
         self.printer = printer
@@ -135,3 +136,54 @@ class PrintServer(EthernetServer):
     def processData(self, inp):
         self.printer.write(inp)
         return self.printer.readline()
+        
+    @classmethod
+    def findPrintServer(cls, port, maskString="255.255.255.0"):
+        return ServerFinder().findServer(port, maskString)
+
+class ServerFinder:
+    def __init__(self):
+        self.ip = None        
+        
+    def __checkIp__(self, ip):
+        client = EthernetClient()
+        try:
+            client.connect((ip, self.port))
+        except:
+            return False
+        else:
+            client.close()
+            self.ip = ip
+            return True
+            
+    def findServer(self, port, subnetMaskString):
+        self.port = port
+        ServerFinder.netLoop(getMyIp(), subnetMaskString, self.__checkIp__)
+        return self.ip
+    
+    @staticmethod
+    def netLoop(ipString, maskString, functor):
+        maskString = maskString.split('.')
+        mask = [int(num) for num in maskString]
+        
+        ip = ipString.split('.')
+        ip = [int(num) for num in ip]
+        
+        base = []
+        change = []
+        for i in range(len(mask)):
+            base.append(mask[i] & ip[i])
+            change.append( (~mask[i]) & 0xFF)
+            
+        testIp = [0, 0, 0, 0]
+        ipDiff = [0, 0, 0, 0]
+        for ipDiff[0] in range(change[0]+1):
+            for ipDiff[1] in range(change[1]+1):
+                for ipDiff[2] in range(change[2]+1):
+                    for ipDiff[3] in range(change[3]+1):
+                        for i in range(len(ip)):
+                            testIp[i] = base[i] + ipDiff[i]
+                        testIpStr = ''.join(str(ipPiece)+'.' for ipPiece in testIp)[:-1]
+                        
+                        if functor(testIpStr):
+                            return

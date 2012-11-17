@@ -14,6 +14,9 @@ import random
 TEST_HOST = getMyIp()
 TEST_PORT = 3000
 
+def lambda_print(x):
+    print x
+    
 def start(host, port, server = None, client = None):
    if (not client):
        client = EthernetClient()
@@ -48,22 +51,22 @@ def stop(server, client):
         client.close()
     if(server):
         server.stop()
-class TestEthernetAdapter(unittest.TestCase):
+
+class AbstractServerTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        print "Test client server communication"
-        print "Server will be run on this pc with IP:PORT=", str(TEST_HOST) + ":" + str(TEST_PORT)
-        (cls.successfulConnection , cls.server, cls.client) = start(TEST_HOST, TEST_PORT)
-
+        (cls.connected, cls.server, cls.client) = start(TEST_HOST, TEST_PORT, server = EthernetServer(TEST_PORT))
+        
     @classmethod
     def tearDownClass(cls):
         stop(cls.server, cls.client)
-
+        
+class TestEthernetAdapter(AbstractServerTest):
     def testConnection(self):
-        self.assertTrue(TestEthernetAdapter.successfulConnection)
+        self.assertTrue(TestEthernetAdapter.connected)
    
     def testTransmission(self):
-        if(not TestEthernetAdapter.successfulConnection):
+        if(not TestEthernetAdapter.connected):
             self.skipTest("Failed to connect to server")
 
         counter = 5
@@ -75,7 +78,7 @@ class TestEthernetAdapter(unittest.TestCase):
             self.assertTrue(len(answer)>0)
          
     def testLongTransmissions(self):
-        if(not TestEthernetAdapter.successfulConnection):
+        if(not TestEthernetAdapter.connected):
             self.skipTest("Failed to connect to server")
 
         num = 10000
@@ -88,45 +91,83 @@ class TestEthernetAdapter(unittest.TestCase):
         self.assertEqual(msg, answer)
         
     def testMultiClients(self):
-        if(not TestEthernetAdapter.successfulConnection):
+        if(not TestEthernetAdapter.connected):
             self.skipTest("Failed to connect to server")
 
         N = 100
         clients = [ EthernetClient() for c in range(0, N)]
         
-        testMsg = "Test input \n"
+        testMsgA = "Test input A \n"
+        testMsgB = "Test input B \n"
         for client in clients:
             client.connect((TEST_HOST, TEST_PORT))
-            client.write(testMsg)
+            
+            client.write(testMsgA)
             out  = client.readline()
-            self.assertEqual(testMsg, out)
+            self.assertEqual(testMsgA, out)
+            
+            client.write(testMsgB)
+            out  = client.readline()
+            self.assertEqual(testMsgB, out)
 
-class TestPrintServer(unittest.TestCase):
+
+class IpCounter:
+    def __init__(self):
+        self.ipNum = 0
+            
+    def f(self, ip):
+        self.ipNum += 1
+        return False
+
+class AbstractPrintServerTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         (cls.connected, cls.server, cls.client) = start(TEST_HOST, TEST_PORT, server = PrintServer(TEST_PORT))
         cls.virtualPrinter = VirtualPrinter()
-
+        
     @classmethod
     def tearDownClass(cls):
         stop(cls.server, cls.client)
-     
+
+class TestPrintServer(AbstractPrintServerTest):
+    # Note: In current realization virtual printer has one queue of messages
+    # Thus if several sockets will connect to VirtualPrinter than each thread wiil receive only part of messages
     def testVsVirtualPrinter(self):
         if(not TestPrintServer.connected):
             self.skipTest("Failed to connect to server")
-        for i in xrange(0, 5):
+        for i in xrange(0, 3):
             vp = self.virtualPrinter.readline()
             if vp =='':
                 break
-            
+                     
+            attempts = 10
             rvp = ''
-            while rvp=='':
+            while rvp=='' and attempts >0 :
+                attempts -= 1
                 rvp = self.client.readline()
             self.assertEqual(vp, rvp)
+
+class TestPrintServerFinder(AbstractPrintServerTest):
+    def testNetLoop(self):
+        counter = IpCounter()
+        ServerFinder.netLoop("1.2.3.255", "254.254.254.254", counter.f)
+        self.assertEqual(counter.ipNum, 16)
         
-        for i in xrange(0, 100):
-            print self.virtualPrinter.readline()
+    def testFindPrintServer(self):
+        # I assume that server run's on my PC
+        # I use mask which is tight to my ip to make test short
+        ipFound = PrintServer.findPrintServer(TEST_PORT, "255.255.255.230")
+        print "Server ip", getMyIp(), " found server ", ipFound
+        self.assertEqual(getMyIp(), ipFound)
 
     
 if __name__ == '__main__':
-    unittest.main()
+    suite = unittest.TestLoader().loadTestsFromTestCase(TestEthernetAdapter)
+    unittest.TextTestRunner(verbosity=2).run(suite)
+    
+    suite = unittest.TestLoader().loadTestsFromTestCase(TestPrintServer)
+    unittest.TextTestRunner(verbosity=2).run(suite)
+    
+    suite = unittest.TestLoader().loadTestsFromTestCase(TestPrintServerFinder)
+    unittest.TextTestRunner(verbosity=2).run(suite)
+
