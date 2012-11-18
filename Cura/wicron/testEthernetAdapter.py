@@ -11,8 +11,10 @@ from multiprocessing import Process
 import string
 import random
 
+from util.machineCom import VirtualPrinter
+
 TEST_HOST = getMyIp()
-TEST_PORT = 3000
+TEST_PORT = PrintServer.DEFAULT_PORT
 
 def lambda_print(x):
     print x
@@ -94,7 +96,7 @@ class TestEthernetAdapter(AbstractServerTest):
         if(not TestEthernetAdapter.connected):
             self.skipTest("Failed to connect to server")
 
-        N = 100
+        N = 25
         clients = [ EthernetClient() for c in range(0, N)]
         
         testMsgA = "Test input A \n"
@@ -122,8 +124,10 @@ class IpCounter:
 class AbstractPrintServerTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        (cls.connected, cls.server, cls.client) = start(TEST_HOST, TEST_PORT, server = PrintServer(TEST_PORT))
-        cls.virtualPrinter = VirtualPrinter()
+        (cls.connected, cls.server, cls.client) = \
+        start(TEST_HOST, TEST_PORT, server = PrintServer(TEST_PORT, VirtualPrinter())) 
+        cls.client = PrinterClient(_socket = cls.client)
+        cls.virtualPrinter = VirtualPrinter() 
         
     @classmethod
     def tearDownClass(cls):
@@ -146,6 +150,23 @@ class TestPrintServer(AbstractPrintServerTest):
                 attempts -= 1
                 rvp = self.client.readline()
             self.assertEqual(vp, rvp)
+            
+        for i in range(1):
+            outMsg = 'M105\n'
+            self.virtualPrinter.write(outMsg)
+            self.client.write(outMsg)
+            
+            vp = self.virtualPrinter.readline()
+            rvp = self.client.readline()
+            #print 'VIRTUAL: ',vp, 'REMOTE: ', rvp 
+            self.assertEqual(vp, rvp)
+            
+            vp = self.virtualPrinter.readline()
+            rvp = self.client.readline()
+            #print 'VIRTUAL: ',vp, 'REMOTE: ', rvp 
+            self.assertEqual(vp, rvp)
+        
+        
 
 class TestPrintServerFinder(AbstractPrintServerTest):
     def testNetLoop(self):

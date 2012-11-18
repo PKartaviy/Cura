@@ -12,6 +12,7 @@ from avr_isp import intelHex
 
 from util import profile
 from util import version
+from wicron import ethernetAdapter
 
 try:
 	import _winreg
@@ -30,12 +31,14 @@ def serialList():
 		except:
 			pass
 	baselist = baselist + glob.glob('/dev/ttyUSB*') + glob.glob('/dev/ttyACM*') + glob.glob("/dev/tty.usb*") + glob.glob("/dev/cu.*") + glob.glob("/dev/rfcomm*")
+		
 	prev = profile.getPreference('serial_port_auto')
 	if prev in baselist:
 		baselist.remove(prev)
 		baselist.insert(0, prev)
 	if version.isDevVersion():
 		baselist.append('VIRTUAL')
+		baselist.append('ETHERNET_VIRTUAL')
 	return baselist
 
 def baudrateList():
@@ -273,6 +276,35 @@ class MachineCom(object):
 		elif self._port == 'VIRTUAL':
 			self._changeState(self.STATE_OPEN_SERIAL)
 			self._serial = VirtualPrinter()
+		elif re.compile(r'(\d{1,3}\.){3}\d{1,3}$').match(self._port) \
+			or self._port == 'ETHERNET_VIRTUAL':
+			self._changeState(self.STATE_CONNECTING)
+			tcpPort = ethernetAdapter.PrintServer.DEFAULT_PORT
+			self._baudrate = self._baudrateDetectList[0]
+			
+			serverIp = ''
+			if self._port == 'ETHERNET_VIRTUAL':
+				self.localPrintServer = \
+					ethernetAdapter.PrintServer(tcpPort, VirtualPrinter())
+				try:
+					self.localPrintServer.start()
+				except:
+					self._log("Failed to start virtual print server")
+				else:
+					self._log("Started virtual print server")
+					serverIp = ethernetAdapter.getMyIp()
+			else:
+				serverIp = self._port
+				
+			client = ethernetAdapter.PrinterClient()
+			try:
+				client.connect((serverIp, tcpPort))
+			except:
+				client = None
+				self._log("Failed to connect to print server")
+			else:
+				self._log("Connected to print server")
+			self._serial = client
 		else:
 			self._changeState(self.STATE_OPEN_SERIAL)
 			try:

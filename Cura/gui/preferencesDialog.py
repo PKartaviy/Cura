@@ -3,11 +3,13 @@ import __init__
 
 import wx, os, platform, types, string, glob, stat
 import ConfigParser
+from threading import Thread
 
 from gui import configBase
 from util import validators
 from util import machineCom
 from util import profile
+from wicron import ethernetAdapter
 
 class preferencesDialog(configBase.configWindowBase):
 	def __init__(self, parent):
@@ -52,9 +54,20 @@ class preferencesDialog(configBase.configWindowBase):
 		validators.validFloat(c, 0.0)
 		
 		configBase.TitleRow(right, 'Communication settings')
-		c = configBase.SettingRow(right, 'Serial port', 'serial_port', ['AUTO'] + machineCom.serialList(), 'Serial port to use for communication with the printer', type = 'preference')
+		self.portChooser = configBase.SettingRow(right, 'Searching. Please wait', 'serial_port', ['AUTO'] + machineCom.serialList(), 'Serial port to use for communication with the printer', type = 'preference')
+		self.portChooser.ctrl.Enable(False)
 		c = configBase.SettingRow(right, 'Baudrate', 'serial_baud', ['AUTO'] + map(str, machineCom.baudrateList()), 'Speed of the serial port communication\nNeeds to match your firmware settings\nCommon values are 250000, 115200, 57600', type = 'preference')
-
+		
+		# Start timer
+		self.timer = wx.Timer(self)
+		self.Bind(wx.EVT_TIMER, self.OnTimer, self.timer)
+		self.timer.Start(500)
+				
+		self.serverIp = None
+		self.scanningThread = Thread(target = self.scanForPrintServer )
+		self.scanningThread.daemon = True
+		self.scanningThread.start()
+		
 		configBase.TitleRow(right, 'Slicer settings')
 		#c = configBase.SettingRow(right, 'Slicer selection', 'slicer', ['Cura (Skeinforge based)', 'Slic3r'], 'Which slicer to use to slice objects. Usually the Cura engine produces the best results. But Slic3r is developing fast and is faster with slicing.', type = 'preference')
 		c = configBase.SettingRow(right, 'Save profile on slice', 'save_profile', False, 'When slicing save the profile as [stl_file]_profile.ini next to the model.', type = 'preference')
@@ -80,3 +93,13 @@ class preferencesDialog(configBase.configWindowBase):
 		self.MakeModal(False)
 		self.parent.updateProfileToControls()
 		self.Destroy()
+		
+	def scanForPrintServer(self):
+		self.serverIp = ethernetAdapter.PrintServer.findPrintServer(ethernetAdapter.PrintServer.DEFAULT_PORT, "255.255.255.0")
+		self.scannedForServer = True
+	
+	def OnTimer(self, e):
+		if self.serverIp and (not self.portChooser.ctrl.IsEnabled()):
+			self.portChooser.ctrl.AppendItems(strings = [self.serverIp])
+			self.portChooser.ctrl.Enable(True)
+			self.portChooser.label.SetLabel('Serial devices')

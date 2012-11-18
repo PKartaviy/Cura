@@ -1,7 +1,6 @@
 import __init__
 
 import socket
-from util.machineCom import VirtualPrinter
 from threading import Thread
 
 # The goal of this ethernet adapter to have the same interface and 
@@ -20,10 +19,14 @@ def getMyIp():
     return ip
 
 class EthernetClient(socket.socket):
-    def __init__(self, _socket = None, timeout = 0.1):
+    DEFAULT_TIMEOUT = 0.1
+    def __init__(self, _socket = None, timeout = None):
         socket.socket.__init__(self, socket.AF_INET, socket.SOCK_STREAM, proto=0, _sock=_socket)
         self.inMessage = ''
-        self.settimeout(timeout)
+        if timeout==None:
+            self.settimeout(self.DEFAULT_TIMEOUT)
+        else:
+            self.settimeout(timeout)
         
     def write(self, data):
         self.sendall(data)
@@ -46,9 +49,15 @@ class EthernetClient(socket.socket):
         result = self.inMessage[:returnPos+1]
         self.inMessage = self.inMessage[returnPos+1:]
         return result
+    
+#Printer client has a timeout which should be greater than printer_timeout+2*ethernet_timeout
+# 2 seconds is a default timeout of VirtualPrinter
+class PrinterClient(EthernetClient):
+    def __init__(self, _socket=None, printerTimeout=2):
+        EthernetClient.__init__(self, _socket, printerTimeout+2*EthernetClient.DEFAULT_TIMEOUT )
 
 class  EthernetServer:
-    def __init__(self, port, timeout = 0.1):
+    def __init__(self, port):
         # We use multithreading because we have one general resource - printer,
         # which is used in every thread
         # In CPython only one thread can be run simulteneously
@@ -59,7 +68,6 @@ class  EthernetServer:
         self.creatorThread = None
         self.serversocket = None
         self.enableWork = False
-        self.timeout = timeout
         
     def __del__(self):
         self.stop()
@@ -69,10 +77,9 @@ class  EthernetServer:
         if( not self.creatorThread):
             self.enableWork = True
             
-            self.serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.serversocket = EthernetClient()
             self.serversocket.bind((host, self.port))
             self.serversocket.listen(5)
-            self.serversocket.settimeout(self.timeout)
             
             self.creatorThread = Thread(target = self.__creator__)
             self.creatorThread.start()
@@ -107,7 +114,6 @@ class  EthernetServer:
             process.join()
 
     def __processSocket__(self, _socket):
-        _socket.settimeout(self.timeout)
         socketWorking = True
         while ( socketWorking and self.enableWork):
             inp = ''
@@ -129,7 +135,7 @@ class  EthernetServer:
 
 class PrintServer(EthernetServer):
     DEFAULT_PORT = 3000
-    def __init__(self, port, printer=VirtualPrinter()):
+    def __init__(self, port, printer):
         EthernetServer.__init__(self, port)
         self.printer = printer
     
